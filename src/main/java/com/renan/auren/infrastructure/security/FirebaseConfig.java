@@ -12,6 +12,8 @@ import org.springframework.core.io.ClassPathResource;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 
 @Configuration
 public class FirebaseConfig {
@@ -19,19 +21,30 @@ public class FirebaseConfig {
     private static final Object lock = new Object();
     private static volatile boolean initialized = false;
 
+    private InputStream createServiceAccountStream() throws IOException {
+        String firebaseConfigJson = System.getenv("FIREBASE_CONFIG_JSON");
+
+        if (firebaseConfigJson != null && !firebaseConfigJson.isBlank()) {
+            // Lendo credencial do Firebase a partir de variável de ambiente (Railway)
+            return new ByteArrayInputStream(
+                    firebaseConfigJson.getBytes(StandardCharsets.UTF_8)
+            );
+        } else {
+            // Fallback: arquivo local em src/main/resources/serviceAccountKey.json
+            ClassPathResource resource = new ClassPathResource("serviceAccountKey.json");
+            return resource.getInputStream();
+        }
+    }
+
     @PostConstruct
     public void initializeFirebase() throws IOException {
         synchronized (lock) {
             if (!initialized) {
                 if (FirebaseApp.getApps().isEmpty()) {
-                    ClassPathResource resource = new ClassPathResource("serviceAccountKey.json");
-                    
-                    InputStream serviceAccount = resource.getInputStream();
+                    InputStream serviceAccount = createServiceAccountStream();
                     try {
                         FirebaseOptions options = FirebaseOptions.builder()
-                                .setCredentials(
-                                        GoogleCredentials.fromStream(serviceAccount)
-                                )
+                                .setCredentials(GoogleCredentials.fromStream(serviceAccount))
                                 .build();
 
                         FirebaseApp.initializeApp(options);
@@ -51,7 +64,7 @@ public class FirebaseConfig {
     public Firestore firestore() {
         return getFirestoreInstance();
     }
-    
+
     private Firestore getFirestoreInstance() {
         // Garante que o Firebase está inicializado
         if (!initialized) {
@@ -65,7 +78,7 @@ public class FirebaseConfig {
                 }
             }
         }
-        
+
         // Obtém a instância do FirebaseApp
         FirebaseApp app;
         try {
@@ -83,14 +96,14 @@ public class FirebaseConfig {
                 app = FirebaseApp.getApps().get(0);
             }
         }
-        
+
         if (app == null) {
             throw new IllegalStateException("FirebaseApp não foi inicializado corretamente");
         }
-        
+
         return FirestoreClient.getFirestore(app);
     }
-    
+
     public static Firestore getValidFirestore() {
         try {
             FirebaseApp app;
@@ -98,7 +111,7 @@ public class FirebaseConfig {
                 throw new IllegalStateException("Firebase não foi inicializado");
             }
             app = FirebaseApp.getApps().get(0);
-            
+
             // Tenta obter o Firestore
             return FirestoreClient.getFirestore(app);
         } catch (Exception e) {
@@ -107,12 +120,12 @@ public class FirebaseConfig {
             return createNewFirestoreInstance();
         }
     }
-    
+
     // Método para obter uma nova instância do Firestore quando a anterior foi fechada
     public static Firestore getNewFirestoreInstance() {
         return createNewFirestoreInstance();
     }
-    
+
     // Cria uma nova instância do FirebaseApp e retorna um Firestore válido
     private static Firestore createNewFirestoreInstance() {
         synchronized (lock) {
@@ -121,37 +134,34 @@ public class FirebaseConfig {
                 if (!FirebaseApp.getApps().isEmpty()) {
                     // Tenta criar uma nova instância com nome único
                     String newAppName = "auren-app-" + System.currentTimeMillis();
-                    
-                    // Verifica se já existe uma instância com esse nome
+
                     FirebaseApp newApp;
                     try {
                         newApp = FirebaseApp.getInstance(newAppName);
                     } catch (IllegalStateException e) {
                         // Não existe, cria uma nova
-                        ClassPathResource resource = new ClassPathResource("serviceAccountKey.json");
-                        InputStream serviceAccount = resource.getInputStream();
+                        InputStream serviceAccount = new ClassPathResource("serviceAccountKey.json").getInputStream();
                         try {
                             FirebaseOptions options = FirebaseOptions.builder()
                                     .setCredentials(GoogleCredentials.fromStream(serviceAccount))
                                     .build();
-                            
+
                             newApp = FirebaseApp.initializeApp(options, newAppName);
                             System.out.println("Nova instância do FirebaseApp criada: " + newAppName);
                         } finally {
                             serviceAccount.close();
                         }
                     }
-                    
+
                     return FirestoreClient.getFirestore(newApp);
                 } else {
                     // Se não há instâncias, inicializa normalmente
-                    ClassPathResource resource = new ClassPathResource("serviceAccountKey.json");
-                    InputStream serviceAccount = resource.getInputStream();
+                    InputStream serviceAccount = new ClassPathResource("serviceAccountKey.json").getInputStream();
                     try {
                         FirebaseOptions options = FirebaseOptions.builder()
                                 .setCredentials(GoogleCredentials.fromStream(serviceAccount))
                                 .build();
-                        
+
                         FirebaseApp app = FirebaseApp.initializeApp(options);
                         System.out.println("FirebaseApp reinicializado");
                         return FirestoreClient.getFirestore(app);
