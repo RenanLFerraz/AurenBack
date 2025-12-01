@@ -1,19 +1,20 @@
 package com.renan.auren.infrastructure.security;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.ClassPathResource;
+
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.cloud.firestore.Firestore;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
 import com.google.firebase.cloud.FirestoreClient;
 import jakarta.annotation.PostConstruct;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.core.io.ClassPathResource;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
 
 @Configuration
 public class FirebaseConfig {
@@ -22,18 +23,19 @@ public class FirebaseConfig {
     private static volatile boolean initialized = false;
 
     private InputStream createServiceAccountStream() throws IOException {
-        String firebaseConfigJson = System.getenv("FIREBASE_CONFIG_JSON");
+        // 1) tenta ler da variável de ambiente FIREBASE_CONFIG
+        String firebaseConfig = System.getenv("FIREBASE_CONFIG");
 
-        if (firebaseConfigJson != null && !firebaseConfigJson.isBlank()) {
-            // Lendo credencial do Firebase a partir de variável de ambiente (Railway)
+        if (firebaseConfig != null && !firebaseConfig.isBlank()) {
+            // Credencial vinda da variável de ambiente (Railway)
             return new ByteArrayInputStream(
-                    firebaseConfigJson.getBytes(StandardCharsets.UTF_8)
+                    firebaseConfig.getBytes(StandardCharsets.UTF_8)
             );
-        } else {
-            // Fallback: arquivo local em src/main/resources/serviceAccountKey.json
-            ClassPathResource resource = new ClassPathResource("serviceAccountKey.json");
-            return resource.getInputStream();
         }
+
+        // 2) fallback: tenta carregar serviceAccountKey.json do resources (modo local)
+        ClassPathResource resource = new ClassPathResource("serviceAccountKey.json");
+        return resource.getInputStream();
     }
 
     @PostConstruct
@@ -139,8 +141,9 @@ public class FirebaseConfig {
                     try {
                         newApp = FirebaseApp.getInstance(newAppName);
                     } catch (IllegalStateException e) {
-                        // Não existe, cria uma nova
-                        InputStream serviceAccount = new ClassPathResource("serviceAccountKey.json").getInputStream();
+                        // Não existe, cria nova instância usando o arquivo local
+                        ClassPathResource resource = new ClassPathResource("serviceAccountKey.json");
+                        InputStream serviceAccount = resource.getInputStream();
                         try {
                             FirebaseOptions options = FirebaseOptions.builder()
                                     .setCredentials(GoogleCredentials.fromStream(serviceAccount))
@@ -155,8 +158,9 @@ public class FirebaseConfig {
 
                     return FirestoreClient.getFirestore(newApp);
                 } else {
-                    // Se não há instâncias, inicializa normalmente
-                    InputStream serviceAccount = new ClassPathResource("serviceAccountKey.json").getInputStream();
+                    // Se não há instâncias, inicializa normalmente usando o arquivo local
+                    ClassPathResource resource = new ClassPathResource("serviceAccountKey.json");
+                    InputStream serviceAccount = resource.getInputStream();
                     try {
                         FirebaseOptions options = FirebaseOptions.builder()
                                 .setCredentials(GoogleCredentials.fromStream(serviceAccount))
